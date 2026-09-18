@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>AgeGate ZK — UIDAI Age Verification</title>
+
+<script src="/jsQR.js"></script>
+<script src="/snarkjs.min.js"></script>
+
+<style>
+*{
+    box-sizing:border-box;
+}
+
+body{
+    margin:0;
+    font-family:Inter,Segoe UI,Arial,sans-serif;
+    background:#0b1020;
+    color:#f5f7ff;
+}
+
+.container{
+    width:min(1100px,92%);
+    margin:40px auto;
+}
+
+header{
+    margin-bottom:28px;
+}
+
+.logo{
+    font-size:28px;
+    font-weight:800;
+}
+
+.tagline{
+    margin-top:8px;
+    color:#aab3cf;
+    font-size:16px;
+}
+
+.grid{
+    display:grid;
+    grid-template-columns:1.15fr .85fr;
+    gap:20px;
+}
+
+.card{
+    background:#131a2e;
+    border:1px solid #27304a;
+    border-radius:18px;
+    padding:24px;
+    box-shadow:0 15px 40px rgba(0,0,0,.25);
+}
+
+.card h2{
+    margin-top:0;
+}
+
+.small{
+    color:#9da7c5;
+    font-size:14px;
+    line-height:1.5;
+}
+
+.buttons{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    margin:18px 0;
+}
+
+button,
+.file-label{
+    border:0;
+    border-radius:10px;
+    padding:12px 18px;
+    font-weight:700;
+    cursor:pointer;
+    background:#ffffff;
+    color:#111827;
+}
+
+button.secondary,
+.file-label.secondary{
+    background:#252f49;
+    color:#fff;
+}
+
+button:disabled{
+    opacity:.4;
+    cursor:not-allowed;
+}
+
+input[type=file]{
+    display:none;
+}
+
+video,
+.preview{
+    width:100%;
+    max-height:360px;
+    object-fit:contain;
+    border-radius:12px;
+    background:#080c17;
+    display:none;
+}
+
+.status{
+    padding:14px;
+    border-radius:12px;
+    background:#0d1426;
+    border:1px solid #27304a;
+    margin-top:16px;
+    line-height:1.5;
+}
+
+.steps{
+    display:grid;
+    gap:10px;
+    margin-top:18px;
+}
+
+.step{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:12px;
+    border-radius:10px;
+    background:#0d1426;
+    border:1px solid #222b42;
+}
+
+.dot{
+    width:12px;
+    height:12px;
+    border-radius:50%;
+    background:#56617e;
+    flex:none;
+}
+
+.step.done .dot{
+    background:#41d17d;
+}
+
+.step.active .dot{
+    background:#f0c75e;
+}
+
+.result{
+    margin-top:18px;
+    padding:20px;
+    border-radius:14px;
+    display:none;
+    text-align:center;
+}
+
+.result.success{
+    display:block;
+    background:#102519;
+    border:1px solid #2b8a4d;
+}
+
+.big{
+    font-size:34px;
+    font-weight:900;
+    margin:8px 0;
+}
+
+.mock{
+    margin-top:20px;
+    padding:20px;
+    border-radius:14px;
+    background:#0d1426;
+    border:1px solid #27304a;
+}
+
+.price{
+    font-size:28px;
+    font-weight:800;
+    margin:12px 0;
+}
+
+.locked{
+    color:#aab3cf;
+}
+
+.unlocked{
+    color:#41d17d;
+    font-weight:700;
+}
+
+.privacy{
+    margin-top:20px;
+    padding:16px;
+    border-radius:12px;
+    background:#101a30;
+    border:1px solid #263856;
+}
+
+.privacy strong{
+    color:#fff;
+}
+
+@media(max-width:800px){
+    .grid{
+        grid-template-columns:1fr;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<header>
+    <div class="logo">AgeGate ZK</div>
+    <div class="tagline">
+        Prove you are 18+ without exposing your date of birth to the B2B verifier.
+    </div>
+</header>
+
+<div class="grid">
+
+<section class="card">
+
+    <h2>Verify age</h2>
+
+    <div class="small">
+        Scan or upload an Aadhaar Secure QR. The QR is decoded in your browser,
+        then the API verifies the UIDAI digital signature.
+    </div>
+
+    <div class="buttons">
+        <label class="file-label" for="qrFile">
+            Upload QR image
+        </label>
+
+        <button id="startCamera">
+            Scan with camera
+        </button>
+
+        <button id="stopCamera" class="secondary" disabled>
+            Stop camera
+        </button>
+    </div>
+
+    <input id="qrFile" type="file" accept="image/*">
+
+    <video id="video" playsinline autoplay></video>
+
+    <img id="preview" class="preview">
+
+    <div id="status" class="status">
+        Waiting for Aadhaar QR...
+    </div>
+
+    <div class="steps">
+
+        <div id="step1" class="step active">
+            <span class="dot"></span>
+            <span>Scan Aadhaar Secure QR</span>
+        </div>
+
+        <div id="step2" class="step">
+            <span class="dot"></span>
+            <span>Verify UIDAI signature</span>
+        </div>
+
+        <div id="step3" class="step">
+            <span class="dot"></span>
+            <span>Generate Groth16 ZK proof locally</span>
+        </div>
+
+        <div id="step4" class="step">
+            <span class="dot"></span>
+            <span>B2B verifier checks proof</span>
+        </div>
+
+    </div>
+
+    <div id="result" class="result"></div>
+
+</section>
+
+<section class="card">
+
+    <h2>Mock customer checkout</h2>
+
+    <div class="small">
+        Example of how an age-gated platform can consume the API.
+    </div>
+
+    <div class="mock">
+
+        <div>Premium Age-Gated Access</div>
+
+        <div class="price">₹499</div>
+
+        <div id="checkoutStatus" class="locked">
+            🔒 Checkout locked — age verification required.
+        </div>
+
+        <br>
+
+        <button id="checkoutButton" disabled>
+            Verify age to continue
+        </button>
+
+    </div>
+
+    <div class="privacy">
+
+        <strong>B2B verifier sees:</strong>
+
+        <div class="small" style="margin-top:8px;">
+            ZK proof + public signals → 18+ true/false
+        </div>
+
+        <br>
+
+        <strong>B2B verifier does not receive:</strong>
+
+        <div class="small" style="margin-top:8px;">
+            Date of birth
+        </div>
+
+    </div>
+
+</section>
+
+</div>
+</div>
+
+<script>
+
+const wasmPath='/age_check.wasm';
+const zkeyPath='/age_check_final.zkey';
+
+const currentDateValue=()=>{
+    const d=new Date();
+
+    const y=d.getFullYear();
+    const m=String(d.getMonth()+1).padStart(2,'0');
+    const day=String(d.getDate()).padStart(2,'0');
+
+    return String(y)+m+day;
+};
+
+const state={
+    qrData:null,
+    credential:null,
+    cameraStream:null,
+    scanning:false
+};
+
+const statusEl=document.getElementById('status');
+const resultEl=document.getElementById('result');
+const video=document.getElementById('video');
+const preview=document.getElementById('preview');
+const fileInput=document.getElementById('qrFile');
+
+const step1=document.getElementById('step1');
+const step2=document.getElementById('step2');
+const step3=document.getElementById('step3');
+const step4=document.getElementById('step4');
+
+const startCameraButton=document.getElementById('startCamera');
+const stopCameraButton=document.getElementById('stopCamera');
+
+const checkoutButton=document.getElementById('checkoutButton');
+const checkoutStatus=document.getElementById('checkoutStatus');
+
+function setStatus(message){
+    statusEl.textContent=message;
+}
+function resetVerificationUI(){
+
+    state.qrData=null;
+    state.credential=null;
+
+    resultEl.className='result';
+    resultEl.innerHTML='';
+
+    checkoutStatus.textContent=
+        '🔒 Checkout locked — age verification required.';
+
+    checkoutStatus.className='locked';
+
+    checkoutButton.disabled=true;
+    checkoutButton.textContent='Verify age to continue';
+
+    preview.style.display='none';
+    preview.src='';
+
+    resetSteps();
+
+    setStatus(
+        'Waiting for Aadhaar QR...'
+    );
+}
+
+function activateStep(step){
+    step1.classList.remove('active');
+    step2.classList.remove('active');
+    step3.classList.remove('active');
+    step4.classList.remove('active');
+
+    step.classList.add('active');
+}
+
+function completeStep(step){
+    step.classList.remove('active');
+    step.classList.add('done');
+}
+
+function resetSteps(){
+    for(const step of [step1,step2,step3,step4]){
+        step.classList.remove('active','done');
+    }
+
+    step1.classList.add('active');
+}
+
+function acceptQrData(data){
+    if(typeof data!=='string'){
+        return false;
+    }
+
+    const clean=data.replace(/\s+/g,'').trim();
+
+    if(!/^\d+$/.test(clean)){
+        setStatus('QR detected, but it is not a numeric Aadhaar Secure QR payload.');
+        return false;
+    }
+
+    state.qrData=clean;
+
+    processQr();
+
+    return true;
+}
+
+async function decodeImageFile(file){
+
+    setStatus('Reading QR image...');
+
+    const url=URL.createObjectURL(file);
+    preview.src=url;
+    preview.style.display='block';
+
+    const img=new Image();
+
+    img.onload=()=>{
+
+        const scales=[1,2,3];
+
+        for(const scale of scales){
+
+            let width=Math.round(img.naturalWidth*scale);
+            let height=Math.round(img.naturalHeight*scale);
+
+            const maxDimension=1800;
+
+            if(width>maxDimension || height>maxDimension){
+
+                const factor=Math.min(
+                    maxDimension/width,
+                    maxDimension/height
+                );
+
+                width=Math.round(width*factor);
+                height=Math.round(height*factor);
+            }
+
+            const canvas=document.createElement('canvas');
+
+            canvas.width=width;
+            canvas.height=height;
+
+            const ctx=canvas.getContext('2d');
+
+            ctx.drawImage(
+                img,
+                0,
+                0,
+                width,
+                height
+            );
+
+            const imageData=ctx.getImageData(
+                0,
+                0,
+                width,
+                height
+            );
+
+            const qr=jsQR(
+                imageData.data,
+                width,
+                height,
+                {
+                    inversionAttempts:'attemptBoth'
+                }
+            );
+
+            if(qr && acceptQrData(qr.data)){
+                URL.revokeObjectURL(url);
+                return;
+            }
+        }
+
+        setStatus('No QR detected. Use a clear, high-resolution crop of the QR.');
+        URL.revokeObjectURL(url);
+    };
+
+    img.onerror=()=>{
+        setStatus('Could not read image.');
+        URL.revokeObjectURL(url);
+    };
+
+    img.src=url;
+}
+
+fileInput.addEventListener('change',()=>{
+
+    const file=fileInput.files[0];
+
+    if(!file){
+        return;
+    }
+
+    resetVerificationUI();
+
+    stopCamera();
+
+    decodeImageFile(file);
+
+    fileInput.value='';
+});
+
+async function startCamera(){
+    resetVerificationUI();
+    try{
+
+        state.cameraStream=
+            await navigator.mediaDevices.getUserMedia({
+                video:{
+                    facingMode:{
+                        ideal:'environment'
+                    }
+                },
+                audio:false
+            });
+
+        video.srcObject=state.cameraStream;
+        video.style.display='block';
+
+        await video.play();
+
+        state.scanning=true;
+
+        startCameraButton.disabled=true;
+        stopCameraButton.disabled=false;
+
+        setStatus('Camera active. Point it at the Aadhaar QR.');
+
+        scanCamera();
+
+    }catch(error){
+
+        setStatus(
+            'Camera could not be started: '+error.message
+        );
+    }
+}
+
+function stopCamera(){
+
+    state.scanning=false;
+
+    if(state.cameraStream){
+
+        for(const track of state.cameraStream.getTracks()){
+            track.stop();
+        }
+
+        state.cameraStream=null;
+    }
+
+    video.srcObject=null;
+    video.style.display='none';
+
+    startCameraButton.disabled=false;
+    stopCameraButton.disabled=true;
+}
+
+function scanCamera(){
+
+    if(!state.scanning){
+        return;
+    }
+
+    if(video.readyState>=2 && video.videoWidth>0){
+
+        const canvas=document.createElement('canvas');
+
+        canvas.width=video.videoWidth;
+        canvas.height=video.videoHeight;
+
+        const ctx=canvas.getContext('2d');
+
+        ctx.drawImage(
+            video,
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        );
+
+        const imageData=ctx.getImageData(
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        );
+
+        const qr=jsQR(
+            imageData.data,
+            canvas.width,
+            canvas.height,
+            {
+                inversionAttempts:'attemptBoth'
+            }
+        );
+
+        if(qr && /^\d+$/.test(qr.data)){
+
+            stopCamera();
+
+            acceptQrData(qr.data);
+
+            return;
+        }
+    }
+
+    requestAnimationFrame(scanCamera);
+}
+
+startCameraButton.addEventListener(
+    'click',
+    startCamera
+);
+
+stopCameraButton.addEventListener(
+    'click',
+    stopCamera
+);
+
+async function processQr(){
+
+    if(!state.qrData){
+        return;
+    }
+
+    resetSteps();
+
+    completeStep(step1);
+    activateStep(step2);
+
+    setStatus(
+        'QR decoded. Verifying UIDAI digital signature...'
+    );
+
+    try{
+
+        const response=await fetch(
+            '/verify-aadhaar-qr',
+            {
+                method:'POST',
+                headers:{
+                    'Content-Type':'application/json'
+                },
+                body:JSON.stringify({
+                    qrData:state.qrData
+                })
+            }
+        );
+
+        const data=await response.json();
+
+        if(!response.ok || !data.verified){
+
+            throw new Error(
+                data.error ||
+                data.message ||
+                'Aadhaar QR verification failed'
+            );
+        }
+
+        completeStep(step2);
+
+        setStatus(
+            'UIDAI signature verified. Preparing private ZK witness...'
+        );
+
+        state.credential=data.credential;
+
+        activateStep(step3);
+
+        await generateProof();
+
+    }catch(error){
+
+        setStatus('Verification failed: '+error.message);
+
+        state.qrData=null;
+        state.credential=null;
+    }
+}
+
+async function generateProof(){
+
+    try{
+
+        setStatus(
+            'Generating Groth16 proof in your browser...'
+        );
+
+        const currentDate=currentDateValue();
+
+        const input={
+            dob:String(state.credential.dob),
+            salt:String(state.credential.salt),
+            currentDate:currentDate,
+            minAgeThreshold:'180000',
+            commitment:String(state.credential.commitment)
+        };
+
+        const generated=
+            await snarkjs.groth16.fullProve(
+                input,
+                wasmPath,
+                zkeyPath
+            );
+
+        setStatus(
+            'ZK proof generated. Sending proof to B2B verifier...'
+        );
+
+        completeStep(step3);
+        activateStep(step4);
+
+        const response=await fetch(
+            '/verify-proof',
+            {
+                method:'POST',
+                headers:{
+                    'Content-Type':'application/json'
+                },
+                body:JSON.stringify({
+                    proof:generated.proof,
+                    publicSignals:generated.publicSignals
+                })
+            }
+        );
+
+        const result=await response.json();
+
+        if(!response.ok || !result.verified){
+            throw new Error(
+                result.message ||
+                'ZK proof rejected'
+            );
+        }
+
+        completeStep(step4);
+
+        resultEl.className='result success';
+
+        resultEl.innerHTML=
+            '<div class="big">18+ VERIFIED</div>'+
+            '<div>UIDAI signature valid</div>'+
+            '<div>ZK proof valid</div>'+
+            '<div>B2B verifier received no DOB</div>';
+
+        checkoutStatus.textContent=
+            '✅ Age verification passed — checkout unlocked.';
+
+        checkoutStatus.className='unlocked';
+
+        checkoutButton.disabled=false;
+        checkoutButton.textContent='Continue to checkout';
+
+        setStatus(
+            'Done. Your B2B verifier received the ZK proof, not the DOB.'
+        );
+
+        // Remove sensitive witness data from application state.
+        state.qrData=null;
+        state.credential=null;
+
+    }catch(error){
+
+        setStatus(
+            'ZK verification failed: '+error.message
+        );
+
+        state.qrData=null;
+        state.credential=null;
+    }
+}
+
+checkoutButton.addEventListener(
+    'click',
+    ()=>{
+        checkoutStatus.textContent=
+            '✅ Demo checkout completed. No real payment was made.';
+
+        checkoutButton.textContent=
+            'Order confirmed';
+
+        checkoutButton.disabled=true;
+    }
+);
+
+</script>
+
+</body>
+</html>

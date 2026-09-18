@@ -1,17 +1,12 @@
-# Node dependencies
 node_modules/
-npm-debug.log
+*.ptau
 
-# Uploads and temporary files (Crucial for protecting test QR images)
-uploads/
-*.png
-*.jpg
-*.jpeg
-*.pdf
+realQr.png
+realQr.txt
+qr.txt
+qr_anon_v2.txt
 
-# Environment variables (if you add any later)
-.env
-
-# OS generated files
-.DS_Store
-Thumbs.db
+api/realQr.png
+api/realQr.txt
+api/qr.txt
+api/qr_anon_v2.txt
