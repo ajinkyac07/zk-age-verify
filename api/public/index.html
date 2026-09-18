@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zero-Knowledge Age Verification</title>
+    <script src="https://cdn.jsdelivr.net/npm/snarkjs@latest/build/snarkjs.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 40px; max-width: 500px; margin: auto; }
+        input, button { width: 100%; padding: 10px; margin: 10px 0; font-size: 16px; }
+        #statusDiv { margin-top: 20px; font-weight: bold; color: #333; padding: 15px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+    <h2>Prove Your Age (ZKP)</h2>
+    <p>Your Date of Birth never leaves this device.</p>
+    
+    <input type="text" id="dobInput" placeholder="Enter DOB (YYYYMMDD) e.g., 20050101">
+    <button id="verifyBtn">Generate Local Proof & Verify</button>
+    
+    <div id="statusDiv"></div>
+
+    <script>
+        document.getElementById('verifyBtn').addEventListener('click', async () => {
+            const dob = document.getElementById('dobInput').value;
+            const statusDiv = document.getElementById('statusDiv');
+            
+            if (!dob) {
+                statusDiv.innerHTML = "Please enter a valid DOB.";
+                return;
+            }
+
+            try {
+                statusDiv.style.backgroundColor = "#eef";
+                statusDiv.innerHTML = "1. Requesting commitment from issuing authority...";
+                
+                const credRes = await fetch('/issue-credential', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ dob: dob })
+                });
+                const credData = await credRes.json();
+
+                statusDiv.innerHTML = "2. Downloading circuit and generating ZK proof locally in your browser. This takes a few seconds...";
+                
+                const d = new Date();
+                const currentDate = parseInt(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`);
+                
+                const inputs = {
+                    dob: dob,
+                    salt: credData.salt,
+                    currentDate: currentDate,
+                    minAgeThreshold: 180000,
+                    commitment: credData.commitment
+                };
+
+                const { proof, publicSignals } = await snarkjs.groth16.fullProve(inputs, "age_check.wasm", "age_check_final.zkey");
+
+                statusDiv.innerHTML = "3. Proof generated securely! Sending only cryptographic proof to platform...";
+
+                const verifyRes = await fetch('/verify-proof', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ proof, publicSignals })
+                });
+                const verifyData = await verifyRes.json();
+
+                if (verifyData.verified) {
+                    statusDiv.style.backgroundColor = "#dfd";
+                    statusDiv.innerHTML = "✅ Verification Successful! The platform mathematically verified your age without seeing your DOB.";
+                } else {
+                    statusDiv.style.backgroundColor = "#fdd";
+                    statusDiv.innerHTML = "❌ Verification Failed.";
+                }
+
+            } catch (error) {
+                statusDiv.style.backgroundColor = "#fdd";
+                statusDiv.innerHTML = "Error: " + error.message;
+            }
+        });
+    </script>
+</body>
+</html>

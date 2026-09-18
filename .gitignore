@@ -1,2 +1,17 @@
+# Node dependencies
 node_modules/
-*.ptau
+npm-debug.log
+
+# Uploads and temporary files (Crucial for protecting test QR images)
+uploads/
+*.png
+*.jpg
+*.jpeg
+*.pdf
+
+# Environment variables (if you add any later)
+.env
+
+# OS generated files
+.DS_Store
+Thumbs.db
